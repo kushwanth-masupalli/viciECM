@@ -4,3 +4,5 @@ python-multipart
 python-dotenv
 pinecone==5.4.2
 pinecone-plugin-assistant==1.4.0
+passlib[bcrypt]
+supabase

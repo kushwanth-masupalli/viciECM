@@ -5,6 +5,8 @@ from fastapi import UploadFile
 from pinecone import Pinecone
 from pinecone_plugins.assistant.models.chat import Message
 
+from database import supabase_admin
+
 load_dotenv()
 
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
@@ -14,17 +16,18 @@ pc = Pinecone(api_key=PINECONE_API_KEY)
 # Single shared assistant for all organizations
 SHARED_ASSISTANT_NAME = "shared-assistant"
 
-# In-memory org store — replace with MongoDB for production
-organizations = {"m1"}
-
 
 def _get_or_create_shared_assistant():
     """
     Returns the shared assistant instance, creating it if it doesn't exist.
-    All orgs share this one assistant; isolation is done via metadata filtering.
+    All organizations share one Pinecone assistant.
+    File isolation is done using metadata filtering with org_id.
     """
     try:
-        return pc.assistant.Assistant(assistant_name=SHARED_ASSISTANT_NAME)
+        return pc.assistant.Assistant(
+            assistant_name=SHARED_ASSISTANT_NAME
+        )
+
     except Exception:
         pc.assistant.create_assistant(
             assistant_name=SHARED_ASSISTANT_NAME,
@@ -35,34 +38,38 @@ def _get_or_create_shared_assistant():
             ),
             timeout=30
         )
-        return pc.assistant.Assistant(assistant_name=SHARED_ASSISTANT_NAME)
+
+        return pc.assistant.Assistant(
+            assistant_name=SHARED_ASSISTANT_NAME
+        )
 
 
-def create_org_service(org_id: str, org_name: str):
-    if org_id in organizations:
-        return {
-            "message": "Organization already exists",
-            "org_id": org_id,
-            "org_name": organizations[org_id]["org_name"],
-        }
+def get_org_from_supabase(org_id: str):
+    """
+    Checks whether the organization exists in Supabase.
+    """
+    result = (
+        supabase_admin
+        .table("organizations")
+        .select("*")
+        .eq("org_id", org_id)
+        .execute()
+    )
 
-    organizations[org_id] = {
-        "org_id": org_id,
-        "org_name": org_name,
-    }
+    if not result.data:
+        return None
 
-    # Ensure the shared assistant exists
-    _get_or_create_shared_assistant()
-
-    return {
-        "message": "Organization created successfully",
-        "org_id": org_id,
-        "org_name": org_name,
-    }
+    return result.data[0]
 
 
 async def upload_file_service(org_id: str, file: UploadFile):
-    if org_id not in organizations:
+    """
+    Uploads a file to the shared Pinecone assistant.
+    File is tagged with org_id metadata.
+    """
+    org = get_org_from_supabase(org_id)
+
+    if not org:
         return {
             "success": False,
             "error": "Organization not found"
@@ -72,15 +79,15 @@ async def upload_file_service(org_id: str, file: UploadFile):
 
     try:
         assistant = _get_or_create_shared_assistant()
+
         content = await file.read()
 
-        # Write to a temp file — upload_file is the stable method in plugin 1.4.0
         suffix = f"_{file.filename}"
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(content)
             tmp_path = tmp.name
 
-        # Tag every file with org_id for filtering at chat time
         response = assistant.upload_file(
             file_path=tmp_path,
             metadata={"org_id": org_id},
@@ -91,6 +98,7 @@ async def upload_file_service(org_id: str, file: UploadFile):
             "success": True,
             "message": "File uploaded successfully",
             "org_id": org_id,
+            "org_name": org["org_name"],
             "file_name": file.filename,
             "pinecone_response": str(response)
         }
@@ -108,7 +116,13 @@ async def upload_file_service(org_id: str, file: UploadFile):
 
 
 def chat_service(org_id: str, question: str):
-    if org_id not in organizations:
+    """
+    Sends a question to Pinecone Assistant.
+    Uses org_id metadata filter so only that organization's files are searched.
+    """
+    org = get_org_from_supabase(org_id)
+
+    if not org:
         return {
             "success": False,
             "error": "Organization not found"
@@ -119,16 +133,18 @@ def chat_service(org_id: str, question: str):
 
         msg = Message(role="user", content=question)
 
-        # Filter to only this org's files using metadata
-        resp = assistant.chat(
+        response = assistant.chat(
             messages=[msg],
             filter={"org_id": {"$eq": org_id}}
         )
 
         return {
             "success": True,
-            "answer": resp.message.content,
-            "citations": resp.citations if hasattr(resp, "citations") else [],
+            "org_id": org_id,
+            "org_name": org["org_name"],
+            "question": question,
+            "answer": response.message.content,
+            "citations": response.citations if hasattr(response, "citations") else []
         }
 
     except Exception as e:
