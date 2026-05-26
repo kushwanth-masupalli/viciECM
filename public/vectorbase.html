@@ -952,6 +952,7 @@ function handleUploadClick() {
 
 function doLogout() {
   state.authToken = null;
+  localStorage.removeItem('vici_token');
   state.email = null;
   state.orgId = 'demo-org';
   state.docCount = 0;
@@ -978,12 +979,13 @@ function doLogout() {
 }
 
 
+function switchAuth(mode) {
   document.getElementById('form-signin').style.display = mode === 'signin' ? 'block' : 'none';
   document.getElementById('form-signup').style.display = mode === 'signup' ? 'block' : 'none';
   document.getElementById('at-signin').classList.toggle('active', mode === 'signin');
   document.getElementById('at-signup').classList.toggle('active', mode === 'signup');
   setAuthMsg('', '');
-
+}
 
 function setAuthMsg(msg, color) {
   const el = document.getElementById('auth-msg');
@@ -1021,6 +1023,7 @@ async function doSignin() {
     state.authToken = (d && typeof d === 'object')
       ? (d.access_token || d.token || null)
       : (typeof d === 'string' ? d.trim() : null);
+    if (state.authToken) localStorage.setItem('vici_token', state.authToken);
     state.email = email;
     setOrgConnected(email.split('@')[0], email);
     setAuthMsg('Signed in successfully ✓', 'var(--green)');
@@ -1062,6 +1065,7 @@ async function doSignup() {
     state.authToken = (d && typeof d === 'object')
       ? (d.access_token || d.token || null)
       : (typeof d === 'string' ? d.trim() : null);
+    if (state.authToken) localStorage.setItem('vici_token', state.authToken);
     state.orgId = org_id;
     state.email = email;
     setOrgConnected(org_name, email);
@@ -1469,8 +1473,18 @@ function showToast(msg, type) {
 /* ============================================================
    INIT
    ============================================================ */
+const savedToken = localStorage.getItem('vici_token');
+if (savedToken) {
+    state.authToken = savedToken;
+    document.getElementById('logout-btn').style.display = 'flex';
+    // Optionally: fetch user profile/org details here if needed to restore org name, etc.
+}
 document.getElementById('init-time').textContent = getTime();
-showPanel('auth');
+if (state.authToken) {
+    showPanel('upload');
+} else {
+    showPanel('auth');
+}
 </script>
 </body>
 </html>
