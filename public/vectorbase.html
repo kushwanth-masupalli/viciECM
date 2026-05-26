@@ -624,6 +624,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
           <div class="org-sub" id="org-sub-display">connect to get started</div>
         </div>
       </div>
+      <button id="logout-btn" onclick="doLogout()" style="display:none;width:100%;background:transparent;border:1px solid rgba(248,113,113,0.25);border-radius:var(--radius);padding:8px;color:var(--red);font-size:12px;font-family:var(--mono);cursor:pointer;display:none;align-items:center;justify-content:center;gap:6px;transition:all 0.15s;" onmouseover="this.style.background='rgba(248,113,113,0.08)'" onmouseout="this.style.background='transparent'">
+        <i class="ti ti-logout"></i> Sign Out
+      </button>
       <div class="version-tag">vectorbase · open source</div>
     </div>
   </aside>
@@ -947,13 +950,40 @@ function handleUploadClick() {
 }
 
 
-function switchAuth(mode) {
+function doLogout() {
+  state.authToken = null;
+  state.email = null;
+  state.orgId = 'demo-org';
+  state.docCount = 0;
+  state.indexedDocs = [];
+  state.chatHistory = [];
+  state.isTyping = false;
+  document.getElementById('org-display').textContent = 'not signed in';
+  document.getElementById('org-sub-display').textContent = 'connect to get started';
+  document.getElementById('org-status-dot').classList.add('offline');
+  document.getElementById('model-label').textContent = 'idle';
+  document.getElementById('doc-count').textContent = '0';
+  document.getElementById('logout-btn').style.display = 'none';
+  // Reset chat messages to initial state
+  const wrap = document.getElementById('chat-messages');
+  wrap.innerHTML = `<div class="msg ai">
+    <div class="msg-avatar">AI</div>
+    <div class="msg-body">
+      <div class="msg-bubble">Hello! I'm connected to your vector index and ready to answer questions about your uploaded documents. Upload some files first, then ask me anything — I'll retrieve the most relevant context and generate a response.</div>
+      <div class="msg-meta"><span class="msg-time">${getTime()}</span></div>
+    </div>
+  </div>`;
+  showPanel('auth');
+  showToast('Signed out successfully', 'success');
+}
+
+
   document.getElementById('form-signin').style.display = mode === 'signin' ? 'block' : 'none';
   document.getElementById('form-signup').style.display = mode === 'signup' ? 'block' : 'none';
   document.getElementById('at-signin').classList.toggle('active', mode === 'signin');
   document.getElementById('at-signup').classList.toggle('active', mode === 'signup');
   setAuthMsg('', '');
-}
+
 
 function setAuthMsg(msg, color) {
   const el = document.getElementById('auth-msg');
@@ -973,26 +1003,35 @@ async function doSignin() {
   const password = document.getElementById('si-pass').value;
   if (!email || !password) { setAuthMsg('Please fill in all fields', 'var(--amber)'); return; }
   setAuthMsg('Authenticating…', '#9090b8');
+  let r;
   try {
-    const r = await fetch(API_BASE + '/api/auth/signin', {
+    r = await fetch(API_BASE + '/api/auth/signin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
-    const d = await r.json();
-    if (r.ok) {
-      state.authToken = d;
-      state.email = email;
-      setOrgConnected(email.split('@')[0], email);
-      setAuthMsg('Signed in successfully ✓', 'var(--green)');
-      showToast('Signed in as ' + email, 'success');
-      setTimeout(() => showPanel('upload'), 700);
-    } else {
-      const msg = d?.detail?.[0]?.msg || d?.detail || 'Sign in failed';
-      setAuthMsg(msg, 'var(--red)');
-    }
   } catch(e) {
     setAuthMsg('Could not reach the server. Please try again.', 'var(--red)');
+    return;
+  }
+  const raw = await r.text();
+  let d;
+  try { d = JSON.parse(raw); } catch(e) { d = raw; }
+  if (r.ok) {
+    state.authToken = (d && typeof d === 'object')
+      ? (d.access_token || d.token || null)
+      : (typeof d === 'string' ? d.trim() : null);
+    state.email = email;
+    setOrgConnected(email.split('@')[0], email);
+    setAuthMsg('Signed in successfully ✓', 'var(--green)');
+    showToast('Signed in as ' + email, 'success');
+    document.getElementById('logout-btn').style.display = 'flex';
+    setTimeout(() => showPanel('upload'), 700);
+  } else {
+    const msg = (d && typeof d === 'object')
+      ? (d?.detail?.[0]?.msg || d?.detail || 'Sign in failed')
+      : (raw || 'Sign in failed');
+    setAuthMsg(msg, 'var(--red)');
   }
 }
 
@@ -1005,27 +1044,36 @@ async function doSignup() {
     setAuthMsg('Please fill in all fields', 'var(--amber)'); return;
   }
   setAuthMsg('Creating organization…', '#9090b8');
+  let r;
   try {
-    const r = await fetch(API_BASE + '/api/auth/org-signup', {
+    r = await fetch(API_BASE + '/api/auth/org-signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, org_id, org_name })
     });
-    const d = await r.json();
-    if (r.ok) {
-      state.authToken = d;
-      state.orgId = org_id;
-      state.email = email;
-      setOrgConnected(org_name, email);
-      setAuthMsg('Organization created ✓', 'var(--green)');
-      showToast('Welcome to ' + org_name + '!', 'success');
-      setTimeout(() => showPanel('upload'), 700);
-    } else {
-      const msg = d?.detail?.[0]?.msg || d?.detail || 'Signup failed';
-      setAuthMsg(msg, 'var(--red)');
-    }
   } catch(e) {
     setAuthMsg('Could not reach the server. Please try again.', 'var(--red)');
+    return;
+  }
+  const raw = await r.text();
+  let d;
+  try { d = JSON.parse(raw); } catch(e) { d = raw; }
+  if (r.ok) {
+    state.authToken = (d && typeof d === 'object')
+      ? (d.access_token || d.token || null)
+      : (typeof d === 'string' ? d.trim() : null);
+    state.orgId = org_id;
+    state.email = email;
+    setOrgConnected(org_name, email);
+    setAuthMsg('Organization created ✓', 'var(--green)');
+    showToast('Welcome to ' + org_name + '!', 'success');
+    document.getElementById('logout-btn').style.display = 'flex';
+    setTimeout(() => showPanel('upload'), 700);
+  } else {
+    const msg = (d && typeof d === 'object')
+      ? (d?.detail?.[0]?.msg || d?.detail || 'Signup failed')
+      : (raw || 'Signup failed');
+    setAuthMsg(msg, 'var(--red)');
   }
 }
 
@@ -1356,8 +1404,28 @@ async function sendMessage() {
       },
       body: JSON.stringify({ org_id: state.orgId, question: q })
     });
-    const d = await r.json();
-    const text = typeof d === 'string' ? d : JSON.stringify(d);
+    const raw = await r.text();
+    let d;
+    try { d = JSON.parse(raw); } catch(e) { d = raw; }
+    if (!r.ok) {
+      if (r.status === 401 || r.status === 403) {
+        removeTypingBubble();
+        doLogout();
+        showToast('Session expired. Please sign in again.', 'error');
+        showPanel('auth');
+      } else {
+        removeTypingBubble();
+        await appendAiMsg('Something went wrong. Please try again.');
+      }
+      state.isTyping = false;
+      document.getElementById('send-btn').disabled = false;
+      setModelLabel('ready');
+      return;
+    }
+    const text = (d && typeof d === 'object')
+      ? (d.answer || d.response || d.message || d.result || JSON.stringify(d))
+      : (typeof d === 'string' && d.trim() ? d.trim() : null);
+    if (!text) throw new Error('empty response');
     const sources = state.indexedDocs.length
       ? state.indexedDocs.slice(0, 2).map(d => 'chunk_' + Math.floor(Math.random() * 12 + 1) + ' · ' + d.name)
       : ['doc_chunk_' + Math.floor(Math.random() * 8 + 1)];
