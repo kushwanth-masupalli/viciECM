@@ -704,6 +704,16 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 
       <!-- UPLOAD PANEL -->
       <div class="panel" id="panel-upload">
+
+        <!-- NOT SIGNED IN GATE (upload) -->
+        <div id="upload-gate" style="display:none;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:14px;text-align:center;padding:60px 20px">
+          <i class="ti ti-lock" style="font-size:42px;color:var(--text4)"></i>
+          <div style="font-size:16px;font-weight:600;color:var(--text2)">You are not signed in</div>
+          <div style="font-size:12px;font-family:var(--mono);color:var(--text3)">Sign in or create an account to upload documents</div>
+          <button class="btn-primary" style="margin-top:6px" onclick="showPanel('auth')"><i class="ti ti-login"></i> Go to Sign In</button>
+        </div>
+
+        <div id="upload-content">
         <div class="section-header">
           <div class="section-title">Document Ingestion</div>
           <div class="section-sub">Upload files to index them into your vector store</div>
@@ -815,17 +825,25 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
         </div>
 
         <div class="btn-row">
-          <button class="btn-primary" onclick="document.getElementById('file-input').click()">
+          <button class="btn-primary" onclick="handleUploadClick()">
             <i class="ti ti-plus"></i> Select File
           </button>
-          <button class="btn-secondary" id="demo-btn" onclick="runDemoPipeline()">
-            <i class="ti ti-player-play"></i> Demo Pipeline
-          </button>
         </div>
+        </div><!-- /upload-content -->
       </div>
 
       <!-- CHAT PANEL -->
       <div class="panel-chat" id="panel-chat">
+
+        <!-- NOT SIGNED IN GATE (chat) -->
+        <div id="chat-gate" style="display:none;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:14px;text-align:center;padding:60px 20px">
+          <i class="ti ti-lock" style="font-size:42px;color:var(--text4)"></i>
+          <div style="font-size:16px;font-weight:600;color:var(--text2)">You are not signed in</div>
+          <div style="font-size:12px;font-family:var(--mono);color:var(--text3)">Sign in or create an account to use the chat</div>
+          <button class="btn-primary" style="margin-top:6px" onclick="showPanel('auth')"><i class="ti ti-login"></i> Go to Sign In</button>
+        </div>
+
+        <div id="chat-content" style="display:flex;flex-direction:column;flex:1;overflow:hidden">
         <div class="chat-messages" id="chat-messages">
           <div class="msg ai">
             <div class="msg-avatar">AI</div>
@@ -839,11 +857,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
           </div>
         </div>
         <div class="chat-footer">
-          <div class="suggested-qs" id="suggested-qs">
-            <span class="suggested-q" onclick="fillSuggested(this)">What are the main topics covered?</span>
-            <span class="suggested-q" onclick="fillSuggested(this)">Summarize the key points</span>
-            <span class="suggested-q" onclick="fillSuggested(this)">What conclusions are drawn?</span>
-          </div>
+          <div class="suggested-qs" id="suggested-qs" style="display:none"></div>
           <div class="chat-input-shell">
             <textarea class="chat-input" id="chat-input"
               placeholder="Ask anything about your documents…"
@@ -858,6 +872,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
           </div>
           <div class="chat-hint">shift+enter for new line &nbsp;·&nbsp; powered by vector search + LLM</div>
         </div>
+        </div><!-- /chat-content -->
       </div>
     </div>
   </main>
@@ -867,7 +882,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 /* ============================================================
    CONFIG — replace with your actual API base URL
    ============================================================ */
-const API_BASE = window.location.origin;
+const API_BASE = 'https://viciecm.onrender.com';
 
 /* ============================================================
    STATE
@@ -900,11 +915,38 @@ function showPanel(name) {
   if (ttab) ttab.classList.add('active');
   const tnav = document.getElementById('nav-' + name);
   if (tnav) tnav.classList.add('active');
+
+  // Gate upload and chat panels when not signed in
+  if (name === 'upload') {
+    const gate = document.getElementById('upload-gate');
+    const content = document.getElementById('upload-content');
+    if (!state.authToken) {
+      gate.style.display = 'flex';
+      content.style.display = 'none';
+    } else {
+      gate.style.display = 'none';
+      content.style.display = 'block';
+    }
+  }
+  if (name === 'chat') {
+    const gate = document.getElementById('chat-gate');
+    const content = document.getElementById('chat-content');
+    if (!state.authToken) {
+      gate.style.display = 'flex';
+      content.style.display = 'none';
+    } else {
+      gate.style.display = 'none';
+      content.style.display = 'flex';
+    }
+  }
 }
 
-/* ============================================================
-   AUTH
-   ============================================================ */
+function handleUploadClick() {
+  if (!state.authToken) { showPanel('upload'); return; }
+  document.getElementById('file-input').click();
+}
+
+
 function switchAuth(mode) {
   document.getElementById('form-signin').style.display = mode === 'signin' ? 'block' : 'none';
   document.getElementById('form-signup').style.display = mode === 'signup' ? 'block' : 'none';
@@ -950,10 +992,7 @@ async function doSignin() {
       setAuthMsg(msg, 'var(--red)');
     }
   } catch(e) {
-    setAuthMsg('API not reachable — using demo mode', '#9090b8');
-    state.email = email;
-    setOrgConnected(email.split('@')[0], email);
-    setTimeout(() => showPanel('upload'), 600);
+    setAuthMsg('Could not reach the server. Please try again.', 'var(--red)');
   }
 }
 
@@ -986,10 +1025,7 @@ async function doSignup() {
       setAuthMsg(msg, 'var(--red)');
     }
   } catch(e) {
-    state.orgId = org_id;
-    setOrgConnected(org_name, email);
-    setAuthMsg('API not reachable — demo mode activated', '#9090b8');
-    setTimeout(() => showPanel('upload'), 600);
+    setAuthMsg('Could not reach the server. Please try again.', 'var(--red)');
   }
 }
 
@@ -998,6 +1034,8 @@ async function doSignup() {
    ============================================================ */
 function handleDrop(e) {
   e.preventDefault();
+  document.getElementById('upload-zone').classList.remove('drag');
+  if (!state.authToken) { showPanel('upload'); return; }
   document.getElementById('upload-zone').classList.remove('drag');
   const file = e.dataTransfer.files[0];
   if (file) handleFileSelect(file);
@@ -1292,14 +1330,6 @@ async function appendAiMsg(text, sources) {
   wrap.scrollTop = wrap.scrollHeight;
 }
 
-const DEMO_ANSWERS = [
-  "Based on the retrieved context from your documents, the content primarily covers the core methodology and key findings. The semantic search identified 4 highly relevant chunks. The most pertinent section discusses the primary objectives and outlines the approach taken to address them systematically.",
-  "I retrieved 3 matching passages from your indexed documents. The documents outline several key conclusions: first, the data supports the main hypothesis with high confidence; second, the methodology was validated across multiple test cases; and third, the recommended next steps involve further validation in production environments.",
-  "Your indexed documents contain relevant information on this topic. The top-ranked chunk (similarity score 0.89) explains that the system architecture follows a modular design pattern, with each component independently scalable. The pipeline consists of ingestion, processing, and retrieval layers.",
-  "Searching across your vector index returned 5 results. The most semantically similar passage indicates that the main topics covered include data processing workflows, API integration patterns, performance benchmarks, and deployment strategies for production systems.",
-  "The documents you've uploaded discuss this in detail. Specifically, section 3.2 explains the rationale behind the chosen approach, citing performance advantages of 40% over baseline methods. The conclusions drawn emphasize the importance of proper data preprocessing for optimal retrieval quality."
-];
-
 async function sendMessage() {
   const input = document.getElementById('chat-input');
   const q = input.value.trim();
@@ -1317,7 +1347,7 @@ async function sendMessage() {
   showTypingBubble();
 
   try {
-    if (!API_BASE) throw new Error('demo');
+    if (!API_BASE) throw new Error('no api');
     const r = await fetch(API_BASE + '/api/chat', {
       method: 'POST',
       headers: {
@@ -1335,14 +1365,8 @@ async function sendMessage() {
     await appendAiMsg(text, sources);
     state.chatHistory.push({ role: 'assistant', content: text });
   } catch(e) {
-    await sleep(900 + Math.random() * 600);
     removeTypingBubble();
-    const ans = DEMO_ANSWERS[Math.floor(Math.random() * DEMO_ANSWERS.length)];
-    const sources = state.indexedDocs.length
-      ? state.indexedDocs.slice(0, 2).map(d => 'chunk_' + Math.floor(Math.random() * 10 + 1))
-      : ['source_chunk_3', 'semantic_match_7'];
-    await appendAiMsg(ans, sources);
-    state.chatHistory.push({ role: 'assistant', content: ans });
+    await appendAiMsg('Sorry, I could not reach the server. Please check your connection and try again.');
   }
 
   state.isTyping = false;
