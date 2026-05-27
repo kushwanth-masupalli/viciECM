@@ -66,6 +66,7 @@ async def upload_file_service(org_id: str, file: UploadFile):
     """
     Uploads a file to the shared Pinecone assistant.
     File is tagged with org_id metadata.
+    Also stores uploaded file details in Supabase.
     """
     org = get_org_from_supabase(org_id)
 
@@ -81,6 +82,7 @@ async def upload_file_service(org_id: str, file: UploadFile):
         assistant = _get_or_create_shared_assistant()
 
         content = await file.read()
+        file_size = len(content)
 
         suffix = f"_{file.filename}"
 
@@ -88,10 +90,37 @@ async def upload_file_service(org_id: str, file: UploadFile):
             tmp.write(content)
             tmp_path = tmp.name
 
+        # 1. Upload to Pinecone Assistant
         response = assistant.upload_file(
             file_path=tmp_path,
             metadata={"org_id": org_id},
             timeout=None
+        )
+
+        # Try to extract Pinecone file id safely
+        pinecone_file_id = (
+            getattr(response, "id", None)
+            or getattr(response, "file_id", None)
+            or None
+        )
+
+        # 2. Store upload details in Supabase
+        document_row = {
+            "org_id": org_id,
+            "org_name": org.get("org_name"),
+            "file_name": file.filename,
+            "file_size": file_size,
+            "content_type": file.content_type,
+            "pinecone_file_id": pinecone_file_id,
+            "pinecone_response": str(response),
+            "status": "uploaded"
+        }
+
+        db_response = (
+            supabase_admin
+            .table("documents")
+            .insert(document_row)
+            .execute()
         )
 
         return {
@@ -100,6 +129,10 @@ async def upload_file_service(org_id: str, file: UploadFile):
             "org_id": org_id,
             "org_name": org["org_name"],
             "file_name": file.filename,
+            "file_size": file_size,
+            "content_type": file.content_type,
+            "pinecone_file_id": pinecone_file_id,
+            "document_record": db_response.data[0] if db_response.data else None,
             "pinecone_response": str(response)
         }
 
@@ -113,7 +146,6 @@ async def upload_file_service(org_id: str, file: UploadFile):
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
-
 
 def chat_service(org_id: str, question: str):
     """
