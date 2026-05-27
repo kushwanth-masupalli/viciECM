@@ -72,11 +72,10 @@ def org_signup_service(email: str, password: str, org_id: str, org_name: str):
             detail=str(e)
         )
 
-
 def signin_service(email: str, password: str):
     """
     Signs in user using Supabase Auth.
-    Returns access_token to be used as Bearer token on protected routes.
+    Returns access_token + org_id to be used by frontend.
     """
 
     try:
@@ -91,11 +90,32 @@ def signin_service(email: str, password: str):
                 detail="Invalid email or password"
             )
 
+        user_id = response.user.id
+
+        # Fetch profile to get org_id
+        profile = (
+            supabase_admin
+            .table("profiles")
+            .select("org_id, role")
+            .eq("id", user_id)
+            .execute()
+        )
+
+        if not profile.data:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User profile not found"
+            )
+
+        user_profile = profile.data[0]
+
         return {
             "success": True,
             "message": "Signin successful",
             "access_token": response.session.access_token,
             "token_type": "bearer",
+            "org_id": user_profile["org_id"],
+            "role": user_profile.get("role"),
             "user": {
                 "id": response.user.id,
                 "email": response.user.email
@@ -104,12 +124,12 @@ def signin_service(email: str, password: str):
 
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
+        print("Signin error:", str(e))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
-
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
