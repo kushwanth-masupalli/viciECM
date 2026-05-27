@@ -657,9 +657,6 @@ async function doSignin() {
         console.log('[signin] JWT claims:', claims);
         if (claims) {
           orgId = claims.org_id || claims.orgId || claims.organization_id || null;
-          if (!orgId && claims.sub && !claims.sub.includes('@') && claims.sub.length < 64) {
-            orgId = claims.sub;
-          }
         }
       }
 
@@ -668,7 +665,9 @@ async function doSignin() {
         localStorage.setItem('vici_org', orgId);
         console.log('[signin] org_id set to:', orgId);
       } else {
-        console.warn('[signin] org_id not found in response or JWT.');
+        localStorage.removeItem('vici_org');
+        state.orgId = null;
+        console.warn('[signin] org_id not found in signin response. Backend must return org_id.');
       }
     }
 
@@ -873,9 +872,15 @@ async function runPipeline(file) {
 
   // Background API upload — always send org_id (required by backend)
   if (file && state.authToken) {
+    if (!state.orgId) {
+      showToast('Missing org_id. Sign out and sign in again.', 'error');
+      setModelLabel('missing org_id');
+      console.error('[upload] missing org_id. Backend signin must return org_id.');
+      return;
+    }
     try {
       const fd = new FormData();
-      fd.append('org_id', state.orgId || '');
+      fd.append('org_id', state.orgId);
       fd.append('file', file);
       console.log('[upload] org_id:', state.orgId);
       const uploadRes = await fetch(API_BASE + '/api/upload', {
@@ -1015,6 +1020,12 @@ async function sendMessage() {
     return;
   }
 
+  if (!state.orgId) {
+    await appendAiMsg('⚠️ Missing org_id. Please sign out, sign in again, and make sure the backend signin response returns org_id.');
+    setModelLabel('missing org_id');
+    return;
+  }
+
   input.value = '';
   autoResize(input);
   document.getElementById('send-btn').disabled = true;
@@ -1028,7 +1039,7 @@ async function sendMessage() {
 
   try {
     // FIX: Always send org_id — it is required by the API
-    const chatBody = { org_id: state.orgId || '', question: q };
+    const chatBody = { org_id: state.orgId, question: q };
     console.log('[chat] POST /api/chat', JSON.stringify(chatBody));
     console.log('[chat] org_id in state:', state.orgId);
     console.log('[chat] token (first 40 chars):', state.authToken ? state.authToken.substring(0, 40) + '...' : 'NONE');
@@ -1141,9 +1152,6 @@ function showToast(msg, type) {
       const claims = decodeJWT(savedToken);
       if (claims) {
         orgId = claims.org_id || claims.orgId || claims.organization_id || null;
-        if (!orgId && claims.sub && !claims.sub.includes('@') && claims.sub.length < 64) {
-          orgId = claims.sub;
-        }
       }
     }
     if (orgId) {
