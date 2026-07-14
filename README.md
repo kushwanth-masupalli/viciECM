@@ -119,3 +119,4 @@ The `organizations` store is **in-memory only**. Restarting the server clears al
 ├── requirements.txt # Dependencies
 └── .env             # API keys (not committed to git)
 ```
+deployed : https://viciecm.onrender.com
