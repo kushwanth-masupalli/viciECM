@@ -2,9 +2,6 @@
 
 A FastAPI backend that lets multiple organizations upload documents and chat with an AI assistant powered by **Pinecone Assistant**. All organizations share a single Pinecone assistant, with file isolation enforced via metadata filtering.
 
----
-<img width="1920" height="1080" alt="pxfuel" src="https://github.com/user-attachments/assets/610b4478-9865-4cea-9474-b26389378097" />
-
 
 ## Tech Stack
 
